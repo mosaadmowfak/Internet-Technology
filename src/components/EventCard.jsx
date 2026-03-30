@@ -1,46 +1,46 @@
-// components/EventCard.jsx
-import { Link } from 'react-router-dom';
+import { useNavigate } from "react-router-dom";
+import { FaMapMarkerAlt, FaClock } from "react-icons/fa";
 
-const EventCard = ({ id, title, date, location, category }) => {
-  
-  // Logic updated to match your IdeaCard color palette
-  const getCategoryStyle = (cat) => {
-    switch(cat.toLowerCase()) {
-      case 'pitch': return "bg-emerald-100 text-emerald-700 border-emerald-200";
-      case 'tech': return "bg-blue-100 text-blue-700 border-blue-200";
-      case 'networking': return "bg-purple-100 text-purple-700 border-purple-200";
-      case 'build': return "bg-orange-100 text-orange-700 border-orange-200";
-      case 'legal': return "bg-slate-100 text-slate-700 border-slate-200";
-      case 'business': return "bg-indigo-100 text-indigo-700 border-indigo-200";
-      default: return "bg-gray-100 text-gray-600 border-gray-200";
-    }
-  };
+function EventCard({ id, title, date, location, time, description, image }) {
+  const navigate = useNavigate();
+  const d = new Date(date);
+  const day = d.getDate();
+  const month = d.toLocaleString("en-US", { month: "short" });
 
   return (
-    <div className="group bg-white border border-gray-100 rounded-2xl p-6 shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
-      {/* Category Badge */}
-      <div className="mb-4">
-        <span className={`text-xs font-bold px-3 py-1 rounded-full border ${getCategoryStyle(category)}`}>
-          {category.toUpperCase()}
-        </span>
+    <div
+      onClick={() => navigate(`/events/${id}`)}
+      className="bg-white rounded-xl overflow-hidden shadow-sm hover:shadow-lg transition duration-300 cursor-pointer"
+    >
+      {/* Image */}
+      <div className="relative group overflow-hidden">
+        <img
+          src={image}
+          alt={title}
+          className="w-full h-56 object-cover group-hover:scale-105 transition duration-300"
+        />
+        <div className="absolute bottom-4 left-4 bg-[#1D2B59] text-white px-3 py-2 rounded-lg text-center shadow-lg">
+          <p className="text-lg font-bold leading-none">{day}</p>
+          <p className="text-xs">{month}</p>
+        </div>
       </div>
 
       {/* Content */}
-      <div className="mb-6">
-        <h3 className="text-xl font-bold text-[#1D2B59] group-hover:text-indigo-800 transition-colors">{title}</h3>
-        <p className="text-gray-500 text-sm font-medium mt-1">{date}</p>
-        <p className="text-gray-400 text-sm mt-1">{location}</p>
+      <div className="p-5 space-y-3">
+        <div className="flex justify-between text-xs text-gray-500">
+          <span className="flex items-center gap-1">
+            <FaMapMarkerAlt className="text-green-500" /> {location}
+          </span>
+          <span className="flex items-center gap-1">
+            <FaClock className="text-green-500" /> {time}
+          </span>
+        </div>
+        <h3 className="text-[15px] font-semibold text-gray-800 leading-snug">{title}</h3>
+        <p className="text-sm text-gray-500 leading-relaxed line-clamp-2">{description}</p>
+        <span className="inline-block text-xs text-[#1D2B59] font-semibold hover:underline">View Details →</span>
       </div>
-
-      {/* Button */}
-      <Link 
-        to={`/events/${id}`} 
-        className="block text-center w-full bg-[#1D2B59] text-white py-2.5 rounded-xl font-semibold hover:bg-emerald-600 transition-all duration-300"
-      >
-        View Details
-      </Link>
     </div>
   );
-};
+}
 
 export default EventCard;

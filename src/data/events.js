@@ -1,0 +1,43 @@
+const events = [
+  {
+    id: 1,
+    title: "Startup Pitch Night",
+    date: "2026-03-15",
+    location: "Innovation Hub, MUST",
+    time: "6:00 PM – 10:00 PM",
+    description: "Students pitch their projects in front of real investors for a chance at funding.",
+    fullDescription: "An exciting evening where student founders pitch their startup ideas to a panel of expert judges and real investors. Get valuable feedback, win prizes, and make connections that could change your entrepreneurial journey. Networking opportunities and refreshments will be available throughout the night.",
+    speaker: "Dr. Ahmed Hassan – Venture Capitalist & MUST Alumni",
+    seats: 120,
+    image: "https://images.unsplash.com/photo-1556761175-4b46a572b786",
+    tags: ["Pitch", "Funding", "Networking"],
+  },
+  {
+    id: 2,
+    title: "Build Startup from Zero",
+    date: "2026-03-20",
+    location: "Main Auditorium, MUST",
+    time: "12:00 PM – 3:00 PM",
+    description: "Learn how to take an idea from concept to a real product.",
+    fullDescription: "A hands-on workshop led by seasoned entrepreneurs covering the full journey of building a startup — from validating your idea, building an MVP, finding your first customers, to pitching to investors. Whether you are a first-timer or looking to sharpen your skills, this session is for you.",
+    speaker: "Eng. Sara Mahmoud – Co-Founder of TechVentures EG",
+    seats: 80,
+    image: "https://images.unsplash.com/photo-1521737604893-d14cc237f11d",
+    tags: ["Workshop", "Startup", "MVP"],
+  },
+  {
+    id: 3,
+    title: "Entrepreneur Networking",
+    date: "2026-03-25",
+    location: "Business Lounge, MUST",
+    time: "4:00 PM – 8:00 PM",
+    description: "Meet founders and build a powerful professional network.",
+    fullDescription: "A relaxed but structured networking event connecting students, startup founders, mentors, and industry professionals. Come prepared with your ideas and business cards. Speed networking rounds, open discussions, and a startup showcase will make this an unforgettable evening for anyone serious about entrepreneurship.",
+    speaker: "Multiple Industry Speakers & Mentors",
+    seats: 60,
+    image: "https://images.unsplash.com/photo-1515169067868-5387ec356754",
+    tags: ["Networking", "Community", "Mentorship"],
+  },
+];
+
+export default events;
