@@ -1,60 +1,42 @@
-// pages/Ideas.jsx
+import { useEffect, useState } from "react";
 import IdeaCard from "../components/IdeaCard";
+import { db } from "../firebase";
+import { collection, getDocs } from "firebase/firestore";
 
 const Ideas = () => {
-  const ideas = [
-    { 
-      id: 1, 
-      title: "University AI Chatbot", 
-      description: "An intelligent bot to help students navigate campus life, find buildings, and answer FAQ.", 
-      owner: "Closed", 
-      tags: ["AI", "Education"],
-      status: "open"
-    },
-    { 
-      id: 2, 
-      title: "Green Campus Initiative", 
-      description: "Sustainable waste management and recycling rewards system for students on campus.", 
-      owner: "Open", 
-      tags: ["Environment", "Startup"],
-      status: "closed"
-    },
-    { 
-      id: 3, 
-      title: "Campus Ride-Share", 
-      description: "A secure way for students living in the same area to share rides to university.", 
-      owner: "Open", 
-      tags: ["Transport", "Social"],
-    },
-    { 
-      id: 4, 
-      title: "Textbook Exchange", 
-      description: "A digital marketplace to buy, sell, or swap used textbooks with fellow students.", 
-      owner: "Closed", 
-      tags: ["Business", "Education"],
-    },
-    { 
-      id: 5, 
-      title: "Mentor Connect", 
-      description: "Connecting fresh graduates with alumni industry mentors for career guidance.", 
-      owner: "Closed", 
-      tags: ["Business", "Networking"],
-      status: "open"
-    },
-    { 
-      id: 6, 
-      title: "Student Wellness Tracker", 
-      description: "An app that helps students manage exam stress through mindfulness and health tips.", 
-      owner: "open", 
-      tags: ["Health", "Startup"],
-    },
-  ];
+  const [ideas, setIdeas] = useState([]);
+
+  const fetchIdeas = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, "ideas"));
+
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      console.log("🔥 ALL IDEAS:", data);
+
+      // ✅ accepted فقط
+      const acceptedIdeas = data.filter(i => i.status === "accepted");
+
+      console.log("✅ ACCEPTED:", acceptedIdeas);
+
+      setIdeas(acceptedIdeas);
+
+    } catch (err) {
+      console.log("ERROR:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchIdeas();
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#f5f7fb] py-12 px-6">
       <div className="max-w-7xl mx-auto">
 
-        {/* Header */}
         <div className="mb-12 text-center">
           <h1 className="text-4xl font-extrabold text-[#1D2B59]">
             Discover Startup Ideas
@@ -64,19 +46,25 @@ const Ideas = () => {
           </p>
         </div>
 
-        {/* Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {ideas.map((idea) => (
-            <IdeaCard 
-              key={idea.id} 
-              title={idea.title} 
-              description={idea.description} 
-              owner={idea.owner} 
-              tags={idea.tags} 
-              status={idea.status}
-            />
-          ))}
-        </div>
+        {/* 🔥 لو مفيش أفكار */}
+        {ideas.length === 0 ? (
+          <p className="text-center text-gray-500 text-lg">
+            No accepted ideas yet 😅
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {ideas.map((idea) => (
+              <IdeaCard
+                key={idea.id}
+                id={idea.id}
+                title={idea.title}
+                description={idea.description}
+                owner={idea.userId}
+                tags={idea.tags || []}
+              />
+            ))}
+          </div>
+        )}
 
       </div>
     </div>

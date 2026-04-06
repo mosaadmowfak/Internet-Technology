@@ -1,72 +1,75 @@
-import profileImage from "../assets/IMG_1731.jpg"
+import { useEffect, useState } from "react";
+import { auth } from "../firebase";
+import { onAuthStateChanged, updateProfile } from "firebase/auth";
+import profileImage from "../assets/IMG_1731.jpg";
 
 const Profile = () => {
-  // Mock data - eventually, this will come from your database
-  const user = {
-    name: "Omar Sherif",
-    role: "Software Engineer",
-    bio: "Passionate about building scalable web applications and exploring AI solutions for educational challenges.",
-    skills: ["React", "Next.js", "AI engineering", "Node.js", "UI/UX Design", "Firebase"],
-    projects: [
-      { title: "Eco-Connect", status: "Active" },
-      { title: "AI Study Buddy", status: "In-Progress" }
-    ]
+  const [user, setUser] = useState(null);
+  const [name, setName] = useState("");
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+
+      if (u?.displayName) {
+        setName(u.displayName);
+      } else if (u?.email) {
+        setName(u.email.split("@")[0]);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  if (!user) {
+    return <h2 className="text-center mt-10">Loading...</h2>;
+  }
+
+  const handleSave = async () => {
+    await updateProfile(auth.currentUser, {
+      displayName: name,
+    });
+
+    alert("Name updated 🔥");
+    setEditing(false);
   };
 
   return (
     <div className="max-w-4xl mx-auto py-10 px-6">
       
-      {/* Profile Header */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 mb-8">
+      <div className="bg-white rounded-2xl shadow-sm border p-8 mb-8">
         <div className="flex items-center gap-6">
-          {/* Profile Image */}
+
           <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-[#1D2B59]">
-            <img 
-              src={profileImage} 
-              alt={user.name} 
-              className="w-full h-full object-cover"
-            />
+            <img src={profileImage} className="w-full h-full object-cover" />
           </div>
 
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">{user.name}</h1>
-            <p className="text-[#1D2B59] font-medium text-lg">{user.role}</p>
+            {editing ? (
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="border p-2 rounded"
+              />
+            ) : (
+              <h1 className="text-3xl font-bold">
+                {user.displayName || user.email.split("@")[0]}
+              </h1>
+            )}
+
+            <p className="text-[#1D2B59]">{user.email}</p>
           </div>
 
-          <button className="ml-auto bg-gray-100 px-6 py-2 rounded-lg font-medium hover:bg-gray-200 transition">
-            Edit Profile
-          </button>
-        </div>
-
-        <p className="mt-6 text-gray-600 max-w-2xl">{user.bio}</p>
-
-        {/* Skills Section */}
-        <div className="mt-6">
-          <h3 className="font-semibold text-gray-900 mb-2">Skills</h3>
-          <div className="flex flex-wrap gap-2">
-            {user.skills.map((skill) => (
-              <span key={skill} className="bg-blue-50 text-[#1D2B59] px-3 py-1 rounded-full text-sm font-medium">
-                {skill}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Projects Section */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-        <h3 className="text-xl font-bold text-gray-900 mb-6">My Projects</h3>
-        <div className="space-y-4">
-          {user.projects.map((project, index) => (
-            <div key={index} className="flex justify-between items-center p-4 border border-gray-100 rounded-lg hover:border-[#1D2B59] transition">
-              <span className="font-medium text-gray-800">{project.title}</span>
-              <span className={`text-xs px-3 py-1 rounded-full ${
-                project.status === "Active" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"
-              }`}>
-                {project.status}
-              </span>
-            </div>
-          ))}
+          {editing ? (
+            <button onClick={handleSave} className="ml-auto bg-green-500 text-white px-4 py-2 rounded">
+              Save
+            </button>
+          ) : (
+            <button onClick={() => setEditing(true)} className="ml-auto bg-gray-200 px-4 py-2 rounded">
+              Edit
+            </button>
+          )}
         </div>
       </div>
     </div>
