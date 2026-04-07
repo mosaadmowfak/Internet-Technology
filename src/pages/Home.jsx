@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { collection, onSnapshot } from "firebase/firestore";
 import { Link } from "react-router-dom";
 import HeroSlider from "../components/HeroSlider";
 import SocialSidebar from "../components/SocialSidebar";
@@ -6,6 +7,8 @@ import IdeaCard from "../components/IdeaCard";
 import EventCard from "../components/EventCard";
 import events from "../data/events";
 import ProfilePic from "../assets/IMG_1731.jpg";
+import { db } from "../firebase";
+import { MODERATION_COLLECTIONS, isLearningHubPublished } from "../services/moderationService";
 import {
   FaLightbulb, FaBook, FaCalendarAlt, FaUsers,
   FaRegCommentDots, FaQuestionCircle, FaRegSmile,
@@ -13,22 +16,6 @@ import {
 } from "react-icons/fa";
 
 /* ─── Data ─────────────────────────────────────────────── */
-const ideas = [
-  { id: 1, title: "University AI Chatbot",     description: "An intelligent bot to help students navigate campus life, find buildings, and answer FAQ.",           owner: "Closed", tags: ["AI", "Education"],      status: "open"   },
-  { id: 2, title: "Green Campus Initiative",   description: "Sustainable waste management and recycling rewards system for students on campus.",                    owner: "Open",   tags: ["Environment", "Startup"], status: "closed" },
-  { id: 3, title: "Campus Ride-Share",         description: "A secure way for students living in the same area to share rides to university.",                      owner: "Open",   tags: ["Transport", "Social"]                    },
-  { id: 4, title: "Textbook Exchange",         description: "A digital marketplace to buy, sell, or swap used textbooks with fellow students.",                     owner: "Closed", tags: ["Business", "Education"]                  },
-  { id: 5, title: "Mentor Connect",            description: "Connecting fresh graduates with alumni industry mentors for career guidance.",                          owner: "Closed", tags: ["Business", "Networking"], status: "open"   },
-  { id: 6, title: "Student Wellness Tracker",  description: "An app that helps students manage exam stress through mindfulness and health tips.",                    owner: "open",   tags: ["Health", "Startup"]                      },
-];
-
-
-const resources = [
-  { id: 1, type: "video", title: "Entrepreneurship Reality Check",   author: "Omar Saleh (CEO of Khazna)", thumbnail: "https://img.youtube.com/vi/ITzSqEjqNMw/maxresdefault.jpg", link: "https://www.youtube.com/embed/ITzSqEjqNMw", category: "Leadership", description: "Learn about the real journey of a Fintech giant." },
-  { id: 2, type: "video", title: "دليل النجاح في ريادة الأعمال",    author: "باسم المحمدي",              thumbnail: "https://img.youtube.com/vi/6oox-CSglWw/maxresdefault.jpg", link: "https://www.youtube.com/embed/6oox-CSglWw",  category: "Leadership", description: "Learn entrepreneurship fundamentals." },
-  { id: 3, type: "video", title: "Startup & Business Insights",      author: "YouTube",                   thumbnail: "https://img.youtube.com/vi/Izdf8guwjFs/maxresdefault.jpg", link: "https://www.youtube.com/embed/Izdf8guwjFs",  category: "Startup",    description: "Key insights about startups and business growth." },
-  { id: 4, type: "post",  title: "How to Start a Startup",           author: "Y Combinator",              thumbnail: "https://images.unsplash.com/photo-1557804506-669a67965ba0",                                                  link: "https://www.ycombinator.com/library/4A-how-to-start-a-startup", category: "Startup", description: "A complete guide to building your startup from scratch." },
-];
 
 const services = [
   { icon: <FaLightbulb />, title: "Ideas",        description: "Share startup ideas and collaborate with innovators.",                          to: "#ideas"     },
@@ -42,8 +29,63 @@ export default function Home() {
   const [filter, setFilter]       = useState("all");
   const [activeVideo, setActiveVideo] = useState(null);
   const [comment, setComment]     = useState("");
+  const [resources, setResources] = useState([]);
+  const [legacyResources, setLegacyResources] = useState([]);
+  const [ideas, setIdeas] = useState([]);
 
-  const filtered = filter === "all" ? resources : resources.filter(r => r.type === filter);
+  useEffect(() => {
+    const subscriptions = [
+      {
+        ref: collection(db, MODERATION_COLLECTIONS.learningHub),
+        setter: setResources,
+      },
+      {
+        ref: collection(db, MODERATION_COLLECTIONS.legacyLearningHub),
+        setter: setLegacyResources,
+      },
+      {
+        ref: collection(db, MODERATION_COLLECTIONS.ideas),
+        setter: setIdeas,
+      },
+    ];
+
+    const unsubscribes = subscriptions.map(({ ref, setter }) =>
+      onSnapshot(
+        ref,
+        (snapshot) => {
+          const items = snapshot.docs
+            .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+            .filter(isLearningHubPublished);
+          setter(items);
+        },
+        (error) => {
+          console.error("Home learning hub listener error:", error);
+        }
+      )
+    );
+
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+  }, []);
+
+  const combinedResources = useMemo(() => {
+    return [...resources, ...legacyResources].sort((a, b) => {
+      const ta = a.createdAt?.toMillis?.() ?? 0;
+      const tb = b.createdAt?.toMillis?.() ?? 0;
+      return tb - ta;
+    });
+  }, [resources, legacyResources]);
+
+  const approvedIdeas = useMemo(() => {
+    return ideas
+      .filter((item) => item.status === "accepted")
+      .sort((a, b) => {
+        const ta = a.createdAt?.toMillis?.() ?? 0;
+        const tb = b.createdAt?.toMillis?.() ?? 0;
+        return tb - ta;
+      });
+  }, [ideas]);
+
+  const filtered = filter === "all" ? combinedResources : combinedResources.filter(r => r.type === filter);
 
   return (
     <div className="relative">
@@ -90,9 +132,22 @@ export default function Home() {
             </Link>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {ideas.map((idea) => (
-              <IdeaCard key={idea.id} title={idea.title} description={idea.description} owner={idea.owner} tags={idea.tags} status={idea.status} />
-            ))}
+            {approvedIdeas.length > 0 ? (
+              approvedIdeas.map((idea) => (
+                <IdeaCard
+                  key={idea.id}
+                  id={idea.id}
+                  title={idea.title}
+                  description={idea.description}
+                  owner={idea.userId || "Community"}
+                  tags={idea.tags || []}
+                />
+              ))
+            ) : (
+              <div className="col-span-full text-center text-gray-500 py-16 border border-dashed rounded-3xl">
+                No approved ideas are available yet. Once admin accepts them, they will appear here.
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -116,30 +171,36 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {filtered.map(item => (
-              <div key={item.id} className="bg-white rounded-3xl overflow-hidden shadow hover:shadow-xl transition group">
-                <div className="relative h-52 overflow-hidden">
-                  <img src={item.thumbnail} alt={item.title} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
-                  {item.type === "video" && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                      <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center text-xl">▶</div>
-                    </div>
-                  )}
-                  <div className="absolute top-3 left-3 bg-white px-3 py-1 rounded-full text-xs font-bold">{item.category}</div>
+            {filtered.length > 0 ? (
+              filtered.map(item => (
+                <div key={item.id} className="bg-white rounded-3xl overflow-hidden shadow hover:shadow-xl transition group">
+                  <div className="relative h-52 overflow-hidden">
+                    <img src={item.thumbnail} alt={item.title} className="w-full h-full object-cover group-hover:scale-110 transition duration-500" />
+                    {item.type === "video" && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                        <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center text-xl">▶</div>
+                      </div>
+                    )}
+                    <div className="absolute top-3 left-3 bg-white px-3 py-1 rounded-full text-xs font-bold">{item.category}</div>
+                  </div>
+                  <div className="p-5">
+                    <h3 className="font-bold text-lg mb-1">{item.title}</h3>
+                    <p className="text-sm text-gray-400 mb-3">By {item.author}</p>
+                    {item.type === "post" && <p className="text-sm text-gray-600 mb-4">{item.description}</p>}
+                    <button
+                      onClick={() => item.type === "video" ? setActiveVideo(item.link + "?autoplay=1") : window.open(item.link, "_blank")}
+                      className="w-full py-2 rounded-lg border font-semibold hover:bg-[#1D2B59] hover:text-white transition"
+                    >
+                      {item.type === "video" ? "Watch Video" : "Read Article"}
+                    </button>
+                  </div>
                 </div>
-                <div className="p-5">
-                  <h3 className="font-bold text-lg mb-1">{item.title}</h3>
-                  <p className="text-sm text-gray-400 mb-3">By {item.author}</p>
-                  {item.type === "post" && <p className="text-sm text-gray-600 mb-4">{item.description}</p>}
-                  <button
-                    onClick={() => item.type === "video" ? setActiveVideo(item.link + "?autoplay=1") : window.open(item.link, "_blank")}
-                    className="w-full py-2 rounded-lg border font-semibold hover:bg-[#1D2B59] hover:text-white transition"
-                  >
-                    {item.type === "video" ? "Watch Video" : "Read Article"}
-                  </button>
-                </div>
+              ))
+            ) : (
+              <div className="col-span-full text-center text-gray-500 py-16 border border-dashed rounded-3xl">
+                No approved Learning Hub content is available yet. Check back after admin approval.
               </div>
-            ))}
+            )}
           </div>
         </div>
 

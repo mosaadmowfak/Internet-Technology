@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FaRegCommentDots,
   FaQuestionCircle,
@@ -10,9 +10,84 @@ import {
 } from "react-icons/fa";
 
 import ProfilePic from "../assets/IMG_1731.jpg";
+import { auth } from "../firebase";
+import {
+  addPublicItem,
+  fetchAcceptedItems,
+  fetchPublicItems,
+  MODERATION_COLLECTIONS, submitForModeration,
+} from "../services/moderationService";
 
 function CommunityPage() {
-  const [comment, setComment] = useState("");
+  const [posts, setPosts] = useState([]);
+  const [newPost, setNewPost] = useState("");
+  const [communityComments, setCommunityComments] = useState([]);
+  const [commentInputs, setCommentInputs] = useState({});
+
+  const loadPosts = async () => {
+    try {
+      const acceptedPosts = await fetchAcceptedItems(MODERATION_COLLECTIONS.community);
+      setPosts(acceptedPosts);
+    } catch (error) {
+      console.log("Failed to load community posts:", error);
+    }
+  };
+
+  const loadComments = async () => {
+    try {
+      const allComments = await fetchPublicItems(MODERATION_COLLECTIONS.communityComments);
+      setCommunityComments(allComments);
+    } catch (error) {
+      console.log("Failed to load community comments:", error);
+    }
+  };
+
+  useEffect(() => {
+    loadPosts();
+    loadComments();
+  }, []);
+
+  const handleSubmitPost = async () => {
+    if (!newPost.trim()) {
+      return;
+    }
+
+    try {
+      await submitForModeration(
+        MODERATION_COLLECTIONS.community,
+        {
+          text: newPost.trim(),
+        },
+        auth.currentUser
+      );
+      alert("Post sent to admin for review.");
+      setNewPost("");
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
+  const handleSubmitComment = async (postId) => {
+    const value = (commentInputs[postId] || "").trim();
+    if (!value) {
+      return;
+    }
+
+    try {
+      await addPublicItem(
+        MODERATION_COLLECTIONS.communityComments,
+        {
+          postId,
+          text: value,
+        },
+        auth.currentUser
+      );
+      setCommentInputs((prev) => ({ ...prev, [postId]: "" }));
+      await loadComments();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
 
   return (
     <div className="bg-[#f5f7fb] min-h-screen py-10">
@@ -27,6 +102,8 @@ function CommunityPage() {
             <input
               type="text"
               placeholder="Share thoughts, ideas, or updates"
+              value={newPost}
+              onChange={(e) => setNewPost(e.target.value)}
               className="w-full bg-gray-100/80 rounded-full px-5 py-3 focus:outline-none focus:ring-2 focus:ring-blue-200 transition"
             />
           </div>
@@ -58,103 +135,86 @@ function CommunityPage() {
 
             </div>
 
-            <span className="text-sm text-gray-400 hover:text-gray-600 cursor-pointer transition">
-              Drafts
-            </span>
+            <button
+              onClick={handleSubmitPost}
+              className="bg-[#1D2B59] text-white px-4 py-2 rounded-full text-xs font-semibold hover:bg-emerald-600 transition"
+            >
+              Send To Admin
+            </button>
 
           </div>
         </div>
 
-        {/* 🔥 Post Card */}
-        <div className="bg-white/90 backdrop-blur-md border border-gray-200 rounded-2xl shadow-sm p-5 space-y-4 hover:shadow-md transition">
+        {posts.length === 0 ? (
+          <div className="bg-white/90 border border-gray-200 rounded-2xl shadow-sm p-5 text-center text-gray-500">
+            No accepted posts yet.
+          </div>
+        ) : (
+          posts.map((post) => (
+            <div
+              key={post.id}
+              className="bg-white/90 backdrop-blur-md border border-gray-200 rounded-2xl shadow-sm p-5 space-y-4 hover:shadow-md transition"
+            >
+              <p className="text-sm text-gray-500">
+                Posted in <span className="font-semibold text-gray-800">All MUSTIANS</span>
+              </p>
+              <div className="flex justify-between items-start">
+                <div className="flex gap-3">
+                  <img src={ProfilePic} className="w-10 h-10 rounded-full" />
+                  <div>
+                    <p className="font-semibold text-gray-800">{post.userId || "Community User"}</p>
+                  </div>
+                </div>
+              </div>
 
-          {/* Header */}
-          <p className="text-sm text-gray-500">
-            Posted in{" "}
-            <span className="font-semibold text-gray-800">
-              All MUSTIANS
-            </span>
-          </p>
+              <div className="text-gray-700 leading-loose text-[15px]">
+                <p>{post.text}</p>
+              </div>
 
-          {/* User */}
-          <div className="flex justify-between items-start">
+              <div className="flex gap-4 border-t pt-3">
+                <button className="!bg-transparent flex items-center gap-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg transition">
+                  <FaRegThumbsUp /> Like
+                </button>
+                <button className="!bg-transparent flex items-center gap-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg transition">
+                  <FaRegComment /> Comment
+                </button>
+                <button className="!bg-transparent flex items-center gap-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg transition">
+                  <FaShare /> Share
+                </button>
+              </div>
 
-            <div className="flex gap-3">
-              <img src={ProfilePic} className="w-10 h-10 rounded-full" />
+              <div className="flex items-center gap-3 pt-2">
+                <img src={ProfilePic} className="w-8 h-8 rounded-full" />
+                <input
+                  type="text"
+                  placeholder="Write a comment"
+                  value={commentInputs[post.id] || ""}
+                  onChange={(e) =>
+                    setCommentInputs((prev) => ({ ...prev, [post.id]: e.target.value }))
+                  }
+                  className="w-full bg-gray-100/80 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 transition"
+                />
+                <button
+                  onClick={() => handleSubmitComment(post.id)}
+                  className="bg-[#1D2B59] text-white px-3 py-2 rounded-lg text-xs"
+                >
+                  Send
+                </button>
+              </div>
 
-              <div>
-                <p className="font-semibold text-gray-800">
-                  200039281 - Ahmed Khaled Farouk Elmalah
-                </p>
-                <p className="text-xs text-gray-500">
-                  Sat at 11:09 PM • @2
-                </p>
+              <div className="space-y-2">
+                {communityComments
+                  .filter((entry) => entry.postId === post.id)
+                  .map((entry) => (
+                    <div key={entry.id} className="bg-gray-50 rounded-lg p-3 text-sm">
+                      <p>{entry.text}</p>
+                      <p className="text-xs text-gray-400 mt-1">By: {entry.userId}</p>
+                    </div>
+                  ))}
               </div>
             </div>
-
-            <div className="text-sm text-gray-400">
-              Seen by 804
-            </div>
-
-          </div>
-
-          {/* Content */}
-          <div className="text-right text-gray-700 leading-loose text-[15px] space-y-2">
-
-            <p dir="rtl">
-              أنا حالياً بفكر أبدأ مشروع SaaS صغير، بس محتار أبدأ منين:
-            </p>
-
-            <p dir="ltr" className="text-left">
-              What are the biggest challenges you faced when starting your first business idea? 🚀
-            </p>
-
-            <ul className="list-disc pr-5" dir="rtl">
-              <li>هل أبدأ بـ MVP الأول؟</li>
-              <li>ولا أعمل market research الأول؟</li>
-            </ul>
-
-            <p dir="rtl">
-              ياريت أي حد عنده تجربة يفيدنا 🙏
-            </p>
-
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-4 border-t pt-3">
-
-            <button className="!bg-transparent flex items-center gap-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg transition">
-              <FaRegThumbsUp /> Like
-            </button>
-
-            <button className="!bg-transparent flex items-center gap-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg transition">
-              <FaRegComment /> Comment
-            </button>
-
-            <button className="!bg-transparent flex items-center gap-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 px-3 py-2 rounded-lg transition">
-              <FaShare /> Share
-            </button>
-
-          </div>
-
-          {/* Likes */}
-          <p className="text-sm text-gray-600">
-            👍 200053946 - Ahmed Ibrahim Ramadan Salem Mohamed Ashour
-          </p>
-
-          {/* Comment */}
-          <div className="flex items-center gap-3 pt-2">
-            <img src={ProfilePic} className="w-8 h-8 rounded-full" />
-            <input
-              type="text"
-              placeholder="Write a comment"
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              className="w-full bg-gray-100/80 rounded-full px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200 transition"
-            />
-          </div>
-
-        </div>
+          ))
+        )}
 
       </div>
     </div>
