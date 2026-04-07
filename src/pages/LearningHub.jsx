@@ -1,54 +1,125 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { collection, onSnapshot } from "firebase/firestore";
+import { auth, db } from "../firebase";
+import {
+  addPublicItem,
+  fetchPublicItems,
+  isLearningHubPublished,
+  MODERATION_COLLECTIONS,
+} from "../services/moderationService";
 
 const LearningHub = () => {
   const [filter, setFilter] = useState("all");
   const [activeVideo, setActiveVideo] = useState(null);
+  const [resources, setResources] = useState([]);
+  const [legacyResources, setLegacyResources] = useState([]);
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState("");
 
-  const resources = [
-    {
-      id: 1,
-      type: "video",
-      title: "Entrepreneurship Reality Check",
-      author: "Omar Saleh (CEO of Khazna)",
-      thumbnail: "https://img.youtube.com/vi/ITzSqEjqNMw/maxresdefault.jpg",
-      link: "https://www.youtube.com/embed/ITzSqEjqNMw",
-      category: "Leadership",
-      description: "Learn about the real journey of a Fintech giant."
-    },
-    {
-      id: 2,
-      type: "video",
-      title: "دليل النجاح في ريادة الأعمال",
-      author: "باسم المحمدي",
-      thumbnail: "https://img.youtube.com/vi/6oox-CSglWw/maxresdefault.jpg",
-      link: "https://www.youtube.com/embed/6oox-CSglWw",
-      category: "Leadership",
-      description: "Learn entrepreneurship fundamentals."
-    },
-    {
-      id: 3,
-      type: "video",
-      title: "Startup & Business Insights",
-      author: "YouTube",
-      thumbnail: "https://img.youtube.com/vi/Izdf8guwjFs/maxresdefault.jpg",
-      link: "https://www.youtube.com/embed/Izdf8guwjFs",
-      category: "Startup",
-      description: "Learn key insights about startups and business growth."
-    },
-    {
-      id: 4,
-      type: "post",
-      title: "How to Start a Startup",
-      author: "Y Combinator",
-      thumbnail: "https://images.unsplash.com/photo-1557804506-669a67965ba0",
-      category: "Startup",
-      description: "A complete guide to building your startup from scratch.",
-      link: "https://www.ycombinator.com/library/4A-how-to-start-a-startup"
+  const inferResourceType = (item) => {
+    const t = String(item.type || "").toLowerCase();
+    if (t === "video" || t === "post") return t;
+    const link = String(item.link || "");
+    if (
+      link.includes("youtube.com/embed") ||
+      link.includes("youtu.be/") ||
+      link.includes("watch?v=")
+    ) {
+      return "video";
     }
-  ];
+    return "post";
+  };
+
+  const combinedResources = useMemo(
+    () =>
+      [...resources, ...legacyResources].sort((a, b) => {
+        const ta = a.createdAt?.toMillis?.() ?? 0;
+        const tb = b.createdAt?.toMillis?.() ?? 0;
+        return tb - ta;
+      }),
+    [resources, legacyResources]
+  );
+
+  const allResources = useMemo(
+    () =>
+      combinedResources.map((item) => ({
+        id: item.id,
+        type: inferResourceType(item),
+        title: item.title,
+        author: item.author || "Community Member",
+        thumbnail:
+          item.thumbnail ||
+          "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40",
+        link: item.link,
+        category: item.category || "General",
+        description: item.description || "",
+      })),
+    [combinedResources]
+  );
 
   const filteredResources =
-    filter === "all" ? resources : resources.filter(r => r.type === filter);
+    filter === "all" ? allResources : allResources.filter((r) => r.type === filter);
+
+  useEffect(() => {
+    const listeners = [
+      {
+        ref: collection(db, MODERATION_COLLECTIONS.learningHub),
+        setter: setResources,
+      },
+      {
+        ref: collection(db, MODERATION_COLLECTIONS.legacyLearningHub),
+        setter: setLegacyResources,
+      },
+    ];
+
+    const unsubscribes = listeners.map(({ ref, setter }) =>
+      onSnapshot(
+        ref,
+        (snapshot) => {
+          const items = snapshot.docs
+            .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+            .filter(isLearningHubPublished);
+          setter(items);
+        },
+        (error) => {
+          console.error("Learning hub listen error:", error);
+        }
+      )
+    );
+
+    return () => unsubscribes.forEach((unsubscribe) => unsubscribe());
+  }, []);
+
+  const loadAcceptedComments = async () => {
+    try {
+      const allComments = await fetchPublicItems(MODERATION_COLLECTIONS.learningComments);
+      setComments(allComments);
+    } catch (error) {
+      console.log("Failed to load learning comments:", error);
+    }
+  };
+
+  useEffect(() => {
+    loadAcceptedComments();
+  }, []);
+
+  const handleSubmitComment = async (e) => {
+    e.preventDefault();
+    if (!newComment.trim()) {
+      return;
+    }
+    try {
+      await addPublicItem(
+        MODERATION_COLLECTIONS.learningComments,
+        { text: newComment.trim() },
+        auth.currentUser
+      );
+      setNewComment("");
+      await loadAcceptedComments();
+    } catch (error) {
+      alert(error.message);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
@@ -63,6 +134,37 @@ const LearningHub = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 -mt-8">
+        <div className="bg-white p-6 rounded-2xl shadow mb-8 border">
+          <h2 className="text-2xl font-bold text-[#1D2B59] mb-2">Learning Hub Comments</h2>
+          <p className="text-sm text-gray-500 mb-4">Comments are added instantly.</p>
+          <form onSubmit={handleSubmitComment} className="flex gap-3 mb-4">
+            <input
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Write your comment"
+              className="flex-1 border rounded-lg p-2"
+            />
+            <button
+              type="submit"
+              className="bg-[#1D2B59] text-white px-4 rounded-lg font-semibold hover:bg-emerald-600 transition"
+            >
+              Add Comment
+            </button>
+          </form>
+          {comments.length === 0 ? (
+            <p className="text-gray-500 text-sm">No accepted comments yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {comments.map((item) => (
+                <div key={item.id} className="border rounded-lg p-3">
+                  <p className="text-gray-800">{item.text}</p>
+                  <p className="text-xs text-gray-400 mt-1">By: {item.userId}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Filters */}
         <div className="flex bg-white p-2 rounded-2xl shadow-lg w-fit mx-auto mb-12 border">
           {["all", "video", "post"].map(t => (
@@ -82,7 +184,7 @@ const LearningHub = () => {
 
         {/* Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {filteredResources.map(item => (
+          {filteredResources.map((item) => (
             <div
               key={item.id}
               className="bg-white rounded-3xl overflow-hidden shadow hover:shadow-xl transition group"
@@ -124,7 +226,11 @@ const LearningHub = () => {
                 <button
                   onClick={() => {
                     if (item.type === "video") {
-                      setActiveVideo(item.link + "?autoplay=1");
+                      setActiveVideo(
+                        item.link.includes("?")
+                          ? `${item.link}&autoplay=1`
+                          : `${item.link}?autoplay=1`
+                      );
                     } else if (item.type === "post") {
                       window.open(item.link, "_blank");
                     }
@@ -139,6 +245,11 @@ const LearningHub = () => {
             </div>
           ))}
         </div>
+        {filteredResources.length === 0 && (
+          <p className="text-center text-gray-500 mt-8">
+            No learning content available yet. Admin can add videos and articles from dashboard.
+          </p>
+        )}
       </div>
 
       {/* Video Modal */}

@@ -1,17 +1,39 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { FaMapMarkerAlt, FaClock, FaTag, FaChair } from "react-icons/fa";
 import events from "../data/events";
+import { auth, db } from "../firebase";
+import { doc, getDoc } from "firebase/firestore";
+import { MODERATION_COLLECTIONS, submitForModeration } from "../services/moderationService";
 
 function RegisterModal({ event, onClose }) {
   const [form, setForm] = useState({ name: "", email: "", phone: "" });
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitted(true);
+    try {
+      setSubmitting(true);
+      await submitForModeration(
+        MODERATION_COLLECTIONS.eventRegistrations,
+        {
+          eventId: event.id,
+          eventTitle: event.title,
+          name: form.name,
+          email: form.email,
+          phone: form.phone,
+        },
+        auth.currentUser
+      );
+      setSubmitted(true);
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -91,9 +113,10 @@ function RegisterModal({ event, onClose }) {
                 </button>
                 <button
                   type="submit"
+                  disabled={submitting}
                   className="flex-1 bg-[#1D2B59] text-white py-2.5 rounded-xl font-semibold hover:bg-emerald-600 transition"
                 >
-                  Confirm Registration
+                  {submitting ? "Submitting..." : "Confirm Registration"}
                 </button>
               </div>
             </form>
@@ -108,7 +131,38 @@ const EventDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [showRegister, setShowRegister] = useState(false);
-  const event = events.find((e) => e.id === Number(id));
+  const [dynamicEvent, setDynamicEvent] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const staticEvent = events.find((e) => String(e.id) === String(id));
+  const event = staticEvent || dynamicEvent;
+
+  useEffect(() => {
+    const loadEvent = async () => {
+      if (staticEvent) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const ref = doc(db, MODERATION_COLLECTIONS.events, id);
+        const snapshot = await getDoc(ref);
+        if (snapshot.exists()) {
+          setDynamicEvent({ id: snapshot.id, ...snapshot.data() });
+        }
+      } catch (error) {
+        console.log("Failed to load event details:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadEvent();
+  }, [id, staticEvent]);
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center text-gray-500">Loading event...</div>;
+  }
 
   if (!event) {
     return (
@@ -133,7 +187,7 @@ const EventDetails = () => {
         <div className="absolute inset-0 bg-[#1D2B59]/70 flex flex-col items-center justify-center text-white text-center px-6">
           <h1 className="text-3xl md:text-5xl font-extrabold mb-3 drop-shadow">{event.title}</h1>
           <div className="flex flex-wrap justify-center gap-3 text-sm">
-            {event.tags.map(tag => (
+            {(event.tags || []).map(tag => (
               <span key={tag} className="bg-white/20 px-3 py-1 rounded-full">{tag}</span>
             ))}
           </div>
@@ -150,10 +204,12 @@ const EventDetails = () => {
           {/* Left — About */}
           <div className="md:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
             <h2 className="text-2xl font-bold text-[#1D2B59] mb-4">About this Event</h2>
-            <p className="text-gray-600 leading-relaxed mb-6">{event.fullDescription}</p>
+            <p className="text-gray-600 leading-relaxed mb-6">
+              {event.fullDescription || event.description}
+            </p>
 
             <h3 className="text-lg font-bold text-[#1D2B59] mb-2">Speaker</h3>
-            <p className="text-gray-600">{event.speaker}</p>
+            <p className="text-gray-600">{event.speaker || "TBA"}</p>
           </div>
 
           {/* Right — Info Card */}
@@ -175,13 +231,13 @@ const EventDetails = () => {
 
             <div className="flex items-start gap-3 text-sm text-gray-600">
               <FaChair className="text-green-500 mt-0.5 shrink-0" />
-              <p>{event.seats} seats available</p>
+              <p>{event.seats || 0} seats available</p>
             </div>
 
             <div className="flex items-start gap-3 text-sm text-gray-600">
               <FaTag className="text-green-500 mt-0.5 shrink-0" />
               <div className="flex flex-wrap gap-2">
-                {event.tags.map(tag => (
+                {(event.tags || []).map(tag => (
                   <span key={tag} className="bg-gray-100 px-2 py-0.5 rounded-full text-xs font-medium">{tag}</span>
                 ))}
               </div>

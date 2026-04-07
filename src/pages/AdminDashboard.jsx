@@ -1,84 +1,235 @@
 import { useEffect, useState } from "react";
-import { db } from "../firebase";
-import {
-  collection,
-  getDocs,
-  updateDoc,
-  doc,
-  deleteDoc
-} from "firebase/firestore";
+import { useNavigate } from "react-router-dom";
+import { addPublicItem, fetchAllModerationItems, fetchPublicItems, updateModerationStatus, deleteModerationItem, MODERATION_COLLECTIONS } from "../services/moderationService";
+import staticEvents from "../data/events";
+import { auth, db } from "../firebase";
+import { doc, getDoc } from "firebase/firestore";
 
 const AdminDashboard = () => {
+  const navigate = useNavigate();
+  const [user, setUser] = useState(null);
+  const [userRole, setUserRole] = useState(null);
   const [activeTab, setActiveTab] = useState("ideas");
   const [ideas, setIdeas] = useState([]);
+  const [learningResources, setLearningResources] = useState([]);
+  const [communityPosts, setCommunityPosts] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [eventRegistrations, setEventRegistrations] = useState([]);
+  const [learningForm, setLearningForm] = useState({
+    type: "video",
+    title: "",
+    author: "",
+    category: "",
+    link: "",
+    thumbnail: "",
+    description: "",
+  });
 
-  // 🔥 fetch ideas
-  const fetchIdeas = async () => {
+  const loadAdminData = async () => {
     try {
-      const snapshot = await getDocs(collection(db, "ideas"));
+      const [
+        ideasData,
+        learningData,
+        legacyLearningData,
+        communityData,
+        eventsData,
+        registrationsData,
+      ] = await Promise.all([
+        fetchAllModerationItems("ideas"),
+        fetchAllModerationItems(MODERATION_COLLECTIONS.learningHub),
+        fetchAllModerationItems(MODERATION_COLLECTIONS.legacyLearningHub),
+        fetchAllModerationItems(MODERATION_COLLECTIONS.community),
+        fetchAllModerationItems(MODERATION_COLLECTIONS.events),
+        fetchAllModerationItems(MODERATION_COLLECTIONS.eventRegistrations),
+      ]);
 
-      const data = snapshot.docs.map((docu) => ({
-        id: docu.id,
-        ...docu.data()
-      }));
+      // Filter for students: only show their own submissions
+      const isAdmin = userRole === "admin" || userRole === "developer";
+      const filterByUser = (data) => isAdmin ? data : data.filter(item => item.userId === user.uid);
 
-      console.log("DATA:", data); // 🔥 debug
+      const learningItems = [
+        ...learningData.map((item) => ({ ...item, __collection: MODERATION_COLLECTIONS.learningHub })),
+        ...legacyLearningData.map((item) => ({ ...item, __collection: MODERATION_COLLECTIONS.legacyLearningHub })),
+      ];
 
-      setIdeas(data);
-    } catch (err) {
-      console.log("FETCH ERROR:", err);
+      setIdeas(filterByUser(ideasData));
+      setLearningResources(filterByUser(learningItems));
+      setCommunityPosts(filterByUser(communityData));
+      setEvents(filterByUser(eventsData));
+      setEventRegistrations(filterByUser(registrationsData));
+    } catch (error) {
+      console.log("FETCH ERROR:", error);
     }
   };
 
   useEffect(() => {
-    fetchIdeas();
-  }, []);
+    const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
+      if (!currentUser) {
+        navigate("/login");
+        return;
+      }
+      setUser(currentUser);
 
-  // ✅ Accept / Reject (FIXED + DEBUG)
-  const updateIdeaStatus = async (id, status) => {
+      // Fetch user role from Firestore
+      try {
+        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          setUserRole(userData.role);
+        } else {
+          setUserRole("student"); // default
+        }
+      } catch (error) {
+        console.error("Error fetching user role:", error);
+        setUserRole("student");
+      }
+    });
+
+    return () => unsubscribe();
+  }, [navigate]);
+
+  useEffect(() => {
+    if (user && userRole) {
+      loadAdminData();
+    }
+  }, [user, userRole]);
+
+  const handleStatusUpdate = async (collectionName, id, status) => {
     try {
-      console.log("UPDATING:", id, status);
+      await updateModerationStatus(collectionName, id, status);
+      alert("Updated");
+      loadAdminData();
+    } catch (error) {
+      console.log("UPDATE ERROR:", error);
+      alert(error.message);
+    }
+  };
 
-      const ref = doc(db, "ideas", id);
+  const handleDelete = async (collectionName, id) => {
+    try {
+      await deleteModerationItem(collectionName, id);
+      loadAdminData();
+    } catch (error) {
+      console.log("DELETE ERROR:", error);
+    }
+  };
 
-      await updateDoc(ref, {
-        status: status,
+  const renderActionButtons = (collectionName, id) => {
+    if (userRole !== "admin" && userRole !== "developer") return null;
+    return (
+      <div className="flex gap-2 mt-3">
+        <button
+          onClick={() => handleStatusUpdate(collectionName, id, "accepted")}
+          className="bg-green-600 text-white px-3 py-1 rounded"
+        >
+          Accept
+        </button>
+        <button
+          onClick={() => handleStatusUpdate(collectionName, id, "rejected")}
+          className="bg-yellow-500 text-white px-3 py-1 rounded"
+        >
+          Reject
+        </button>
+        <button
+          onClick={() => handleDelete(collectionName, id)}
+          className="bg-red-600 text-white px-3 py-1 rounded"
+        >
+          Delete
+        </button>
+      </div>
+    );
+  };
+
+  const now = new Date();
+  const timeHasComeEvents = [...staticEvents, ...events]
+    .filter((event) => {
+      const dateValue = new Date(event.date);
+      return !Number.isNaN(dateValue.getTime()) && dateValue <= now;
+    });
+
+  const handleLearningFormChange = (e) => {
+    const { name, value } = e.target;
+    setLearningForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleAddLearningContent = async (e) => {
+    e.preventDefault();
+    try {
+      const rawLink = learningForm.link.trim();
+      let normalizedLink = rawLink;
+      if (learningForm.type === "video") {
+        const watchMatch = rawLink.match(
+          /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{6,})/
+        );
+        const embedMatch = rawLink.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]{6,})/);
+        if (watchMatch) {
+          normalizedLink = `https://www.youtube.com/embed/${watchMatch[1]}`;
+        } else if (embedMatch) {
+          normalizedLink = `https://www.youtube.com/embed/${embedMatch[1]}`;
+        }
+      }
+
+      await addPublicItem(
+        MODERATION_COLLECTIONS.learningHub,
+        {
+          type: learningForm.type === "video" ? "video" : "post",
+          title: learningForm.title.trim(),
+          author: learningForm.author.trim(),
+          category: learningForm.category.trim(),
+          description: learningForm.description.trim(),
+          link: normalizedLink,
+          thumbnail:
+            learningForm.thumbnail.trim() ||
+            "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40",
+        },
+        auth.currentUser
+      );
+      setLearningForm({
+        type: "video",
+        title: "",
+        author: "",
+        category: "",
+        link: "",
+        thumbnail: "",
+        description: "",
       });
-
-      alert("Updated ✅");
-
-      fetchIdeas(); // refresh
-
-    } catch (err) {
-      console.log("UPDATE ERROR:", err);
-      alert(err.message); // 🔥 هتعرف المشكلة
+      loadAdminData();
+    } catch (error) {
+      alert(error.message);
     }
   };
 
-  // ❌ Delete
-  const removeIdea = async (id) => {
-    try {
-      await deleteDoc(doc(db, "ideas", id));
-      fetchIdeas();
-    } catch (err) {
-      console.log("DELETE ERROR:", err);
-    }
-  };
+  if (!user || !userRole) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-[#f5f7fb] flex">
 
       {/* Sidebar */}
       <aside className="w-60 bg-[#1D2B59] text-white p-6">
-        <h2 className="text-lg font-bold mb-6">Admin Panel</h2>
+        <h2 className="text-lg font-bold mb-6">Dashboard</h2>
 
         <button onClick={() => setActiveTab("ideas")} className="block w-full text-left mb-3">
           Ideas
         </button>
-
-        <button onClick={() => setActiveTab("overview")} className="block w-full text-left">
-          Overview
+        <button onClick={() => setActiveTab("learning")} className="block w-full text-left mb-3">
+          Learning Hub
         </button>
+        <button onClick={() => setActiveTab("community")} className="block w-full text-left mb-3">
+          Community
+        </button>
+        <button onClick={() => setActiveTab("events")} className="block w-full text-left mb-3">
+          Events
+        </button>
+        <button onClick={() => setActiveTab("registrations")} className="block w-full text-left mb-3">
+          Registrations
+        </button>
+        {(userRole === "admin" || userRole === "developer") && (
+          <button onClick={() => setActiveTab("overview")} className="block w-full text-left">
+            Overview
+          </button>
+        )}
       </aside>
 
       {/* Main */}
@@ -91,21 +242,21 @@ const AdminDashboard = () => {
 
             <div className="grid grid-cols-3 gap-4">
               <div className="bg-white p-5 rounded shadow">
-                <p>Total Ideas</p>
-                <h2 className="text-2xl font-bold">{ideas.length}</h2>
+                <p>Total Submissions</p>
+                <h2 className="text-2xl font-bold">{ideas.length + learningResources.length + communityPosts.length + events.length + eventRegistrations.length}</h2>
               </div>
 
               <div className="bg-white p-5 rounded shadow">
                 <p>Pending</p>
                 <h2 className="text-2xl font-bold">
-                  {ideas.filter(i => i.status === "pending").length}
+                  {[...ideas, ...learningResources, ...communityPosts, ...events, ...eventRegistrations].filter(i => i.status === "pending").length}
                 </h2>
               </div>
 
               <div className="bg-white p-5 rounded shadow">
                 <p>Accepted</p>
                 <h2 className="text-2xl font-bold">
-                  {ideas.filter(i => i.status === "accepted").length}
+                  {[...ideas, ...learningResources, ...communityPosts, ...events, ...eventRegistrations].filter(i => i.status === "accepted").length}
                 </h2>
               </div>
             </div>
@@ -132,33 +283,104 @@ const AdminDashboard = () => {
                   By: {idea.userId}
                 </p>
 
-                <div className="flex gap-2 mt-3">
-
-                  <button
-                    onClick={() => updateIdeaStatus(idea.id, "accepted")}
-                    className="bg-green-600 text-white px-3 py-1 rounded"
-                  >
-                    Accept
-                  </button>
-
-                  <button
-                    onClick={() => updateIdeaStatus(idea.id, "rejected")}
-                    className="bg-yellow-500 text-white px-3 py-1 rounded"
-                  >
-                    Reject
-                  </button>
-
-                  <button
-                    onClick={() => removeIdea(idea.id)}
-                    className="bg-red-600 text-white px-3 py-1 rounded"
-                  >
-                    Delete
-                  </button>
-
-                </div>
+                {renderActionButtons("ideas", idea.id)}
               </div>
             ))}
 
+          </div>
+        )}
+
+        {activeTab === "learning" && (
+          <div>
+            <h1 className="text-2xl font-bold mb-6">Manage Learning Hub</h1>
+            {(userRole === "admin" || userRole === "developer") && (
+              <form onSubmit={handleAddLearningContent} className="bg-white p-5 rounded shadow mb-6 grid md:grid-cols-2 gap-3">
+                <select name="type" value={learningForm.type} onChange={handleLearningFormChange} className="border rounded p-2">
+                  <option value="video">Video</option>
+                  <option value="post">Article</option>
+                </select>
+                <input name="category" value={learningForm.category} onChange={handleLearningFormChange} placeholder="Category" required className="border rounded p-2" />
+                <input name="title" value={learningForm.title} onChange={handleLearningFormChange} placeholder="Title" required className="border rounded p-2" />
+                <input name="author" value={learningForm.author} onChange={handleLearningFormChange} placeholder="Author" required className="border rounded p-2" />
+                <input name="link" value={learningForm.link} onChange={handleLearningFormChange} placeholder="Video embed URL or article URL" required className="border rounded p-2 md:col-span-2" />
+                <input name="thumbnail" value={learningForm.thumbnail} onChange={handleLearningFormChange} placeholder="Thumbnail URL (optional)" className="border rounded p-2 md:col-span-2" />
+                <textarea name="description" value={learningForm.description} onChange={handleLearningFormChange} placeholder="Description" className="border rounded p-2 md:col-span-2" />
+                <button type="submit" className="bg-[#1D2B59] text-white px-4 py-2 rounded md:col-span-2">Add To Website</button>
+              </form>
+            )}
+            {learningResources.map((item) => (
+              <div key={item.id} className="bg-white p-5 rounded shadow mb-4">
+                <h3 className="font-bold text-lg">{item.title}</h3>
+                <p className="text-gray-600">{item.description}</p>
+                <p className="text-sm mt-2">Type: <b>{item.type}</b></p>
+                <p className="text-sm">Status: <b>{item.status}</b></p>
+                <p className="text-xs text-gray-400">By: {item.userId}</p>
+                {renderActionButtons(item.__collection || MODERATION_COLLECTIONS.learningHub, item.id)}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === "community" && (
+          <div>
+            <h1 className="text-2xl font-bold mb-6">Manage Community</h1>
+            {communityPosts.map((item) => (
+              <div key={item.id} className="bg-white p-5 rounded shadow mb-4">
+                <p className="text-gray-700">{item.text}</p>
+                <p className="text-sm mt-2">Status: <b>{item.status}</b></p>
+                <p className="text-xs text-gray-400">By: {item.userId}</p>
+                {renderActionButtons(MODERATION_COLLECTIONS.community, item.id)}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab === "events" && (
+          <div>
+            <h1 className="text-2xl font-bold mb-6">Manage Events</h1>
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+              <h2 className="text-lg font-bold text-yellow-700 mb-2">Events Time Has Come</h2>
+              {timeHasComeEvents.length === 0 ? (
+                <p className="text-sm text-yellow-700">No events have reached their date yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {timeHasComeEvents.map((item, index) => (
+                    <div key={`${item.id}-${index}`} className="bg-white p-3 rounded border">
+                      <p className="font-semibold">{item.title}</p>
+                      <p className="text-sm text-gray-600">Date: {item.date}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {events.map((item) => (
+              <div key={item.id} className="bg-white p-5 rounded shadow mb-4">
+                <h3 className="font-bold text-lg">{item.title}</h3>
+                <p className="text-gray-600">{item.description}</p>
+                <p className="text-sm mt-2">Date: <b>{item.date}</b></p>
+                <p className="text-sm">Status: <b>{item.status}</b></p>
+                <p className="text-xs text-gray-400">By: {item.userId}</p>
+                {renderActionButtons(MODERATION_COLLECTIONS.events, item.id)}
+              </div>
+            ))}
+          </div>
+        )}
+
+
+        {activeTab === "registrations" && (
+          <div>
+            <h1 className="text-2xl font-bold mb-6">Manage Event Registrations</h1>
+            {eventRegistrations.map((item) => (
+              <div key={item.id} className="bg-white p-5 rounded shadow mb-4">
+                <h3 className="font-bold text-lg">{item.eventTitle}</h3>
+                <p className="text-gray-700">Name: {item.name}</p>
+                <p className="text-gray-700">Email: {item.email}</p>
+                <p className="text-gray-700">Phone: {item.phone || "-"}</p>
+                <p className="text-sm mt-2">Status: <b>{item.status}</b></p>
+                <p className="text-xs text-gray-400">By: {item.userId}</p>
+                {renderActionButtons(MODERATION_COLLECTIONS.eventRegistrations, item.id)}
+              </div>
+            ))}
           </div>
         )}
 

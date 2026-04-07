@@ -1,0 +1,49 @@
+# 1. Query for public movies, accessible to anyone.
+query AllPublicMovies @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public.") {
+  movies {
+    id
+    title
+    year
+    summary
+    genres
+    runtime
+  }
+}
+
+# 2. Query for a user's own movie lists, accessible only to the logged-in user.
+query MyMovieLists @auth(level: USER) {
+  movieLists(where: {userId: {eq_expr: "auth.uid"}}) {
+    id
+    name
+    isPublic
+    createdAt
+    updatedAt
+  }
+}
+
+# 3. Mutation to create a new movie list for the logged-in user.
+mutation CreateMyMovieList($name: String!, $isPublic: Boolean, $description: String) @auth(level: USER) {
+  movieList_insert(data: {
+    userId_expr: "auth.uid",
+    name: $name,
+    isPublic: $isPublic,
+    description: $description,
+    createdAt_expr: "request.time",
+    updatedAt_expr: "request.time"
+  }) {
+    id
+  }
+}
+
+# 4. Query to get detailed information about a specific movie, accessible to all logged-in users.
+query GetMovieById($id: UUID!) @auth(level: USER, insecureReason: "This operation is safe to expose to all logged in users.") {
+  movie(id: $id) {
+    id
+    title
+    year
+    summary
+    genres
+    runtime
+    createdAt
+  }
+}
